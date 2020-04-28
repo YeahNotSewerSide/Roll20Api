@@ -205,9 +205,9 @@ class Stack:
 
 
 
-def start_websocket(websocket,campaign):   
-    while True:
-        data = websocket.recv()
+def start_websocket(campaign):   
+    while not campaign._thread_receiver_stop:
+        data = campaign.websocket.recv()
         try:
             p_data = json.loads(data)
         except:
@@ -218,9 +218,9 @@ def start_websocket(websocket,campaign):
 
 
 
-def ping(websocket,timeout = 20):
-    while True:
-        websocket.send('0')
+def ping(campaign,timeout = 20):
+    while not campaign._ping_thread_stop:
+        campaign.websocket.send('0')
         time.sleep(timeout)
         
 
@@ -250,7 +250,9 @@ class Campaign:
         self.websocket = None
         self._request_number = 1
         self._thread_receiver = None
+        self._thread_receiver_stop = False
         self._ping_thread = None
+        self._ping_thread_stop = False
         self.packets = Stack(30)
         self.players = {}
         
@@ -359,13 +361,22 @@ class Campaign:
             self.players[key] = item
 
 
-        self._ping_thread = threading.Thread(target=ping,args=(self.websocket,),name='ping_thread')
+        self._ping_thread = threading.Thread(target=ping,args=(self,),name='ping_thread')
         self._ping_thread.start()
 
-        self._thread_receiver = threading.Thread(target=start_websocket,args=(self.websocket,self),name='receive_thread')
+        self._thread_receiver = threading.Thread(target=start_websocket,args=(self,),name='receive_thread')
         self._thread_receiver.start()
               
         return auth
+
+    def close(self):
+        self._ping_thread_stop = True
+        self._thread_receiver_stop = True
+        while self._ping_thread.is_alive():
+            time.sleep(0.1)
+        while self._thread_receiver.is_alive():
+            time.sleep(0.1)
+        self.websocket.close()
 
     def roll_dice_get(self,dice:int,sides:int,expr='str',resultType='sum',use3d=False,mods={}):
         '''
@@ -433,6 +444,19 @@ class Campaign:
 
     def get_player_name(self):
         return self.players[self.d20_player_id]['displayname']
+
+    def get_accountid_by_name(self,name:str)->int:
+        '''
+        works only for players in campaign
+        returns accountid - id
+        -1 not found
+        '''
+        id = 0
+        for player in campaign.players.keys():
+            if campaign.players[player]['displayname'] == name:
+                id = int(campaign.players[player]['d20userid'])
+                return id
+        return -1
 
 
     def roll_dice_set(self,roll_dice_get_data,signature,rollid,origRoll:str,accountid=None,who=None):
@@ -522,14 +546,17 @@ if __name__ == '__main__':
 
     campaign = ap.campaign(games['games'][0])
     campaign.launch()
+    name = 'Мидир'
+
     #ret = campaign.roll_dice_get(1,69,'+5')
     #campaign.roll_dice_set(ret[0],ret[1],ret[2],'1',5520898,who='1')
-    for i in range(1):
-        for player in campaign.players.keys():
-            campaign.send_message('Party!',int(campaign.players[player]['d20userid']),who=campaign.players[player]['displayname'])
-
+    #for i in range(1):
+    
+    #for player in campaign.players.keys():        
+        #campaign.send_message('Party!',int(campaign.players[player]['d20userid']),who=campaign.players[player]['displayname'])
+    campaign.send_message('!!',campaign.get_accountid_by_name(name),who=name)
     ap.dump_session()
-
+    campaign.close()
     print(games)
 
 
