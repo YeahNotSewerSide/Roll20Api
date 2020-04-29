@@ -11,3 +11,4 @@ Now it's pretty raw api, you can parse your games, launch game, roll dices and s
   
 # TODO:
   Dynamically change variable FIREBASE(Implemented must be checked)
+  Improve dice rolling
