@@ -18,9 +18,6 @@ FIREBASE = 'wss://s-usc1c-nss-284.firebaseio.com/.ws?v=5&'
 FIREBASE_ADDRESS = ('s-usc1c-nss-284.firebaseio.com',8080)
 
 
-
-
-
 class api:
     def __init__(self,email=None,password=None,session_file=None):
         '''
@@ -382,7 +379,7 @@ class Campaign:
             time.sleep(0.1)
         self.websocket.close()
 
-    def roll_dice_get(self,dice:int,sides:int,expr='str',resultType='sum',use3d=False,mods={}):
+    def roll_dice_get(self,dice:int,sides:int,expr='',resultType='sum',use3d=False,mods={}):
         '''
         DOESN'T ROLL DICE IN CAMPAIGN
         Just get response with data from server
@@ -392,12 +389,12 @@ class Campaign:
                               expr-modificator(+5/-2)
         Ex: mods = {"exploding":""}
 
-        returns (roll_dice_get_data,signature,rollid)
+        returns Roll() - object  (roll_dice_get_data,signature,rollid)
         '''
         letters = string.ascii_lowercase+string.ascii_uppercase+string.digits+'-_'
         rollid = ''.join(random.sample(letters, 20))
 
-        if expr == 0:
+        if expr == '':
             data = {'cid':self.campaign_storage_path,
                     'fbnum':self.FIREBASE_ROOT,
                     'authkey':self.GNTKN,
@@ -444,7 +441,7 @@ class Campaign:
         json_data = response[rollid]['json']
 
         signature = response[rollid]['signature']
-        return (json_data,signature,rollid)
+        return Roll(dice,sides,json_data,signature,rollid,expr=expr,mods=mods)#(json_data,signature,rollid)
 
     def get_player_name(self):
         return self.players[self.d20_player_id]['displayname']
@@ -463,7 +460,7 @@ class Campaign:
         return -1
 
 
-    def roll_dice_set(self,roll_dice_get_data,signature,rollid,origRoll:str,accountid=None,who=None):
+    def roll_dice_set(self,roll,accountid=None,who=None):
         '''
         Ex: origRoll='5d20' just string to be written in chat
         '''
@@ -475,12 +472,12 @@ class Campaign:
         data = {'t':'d',
                 'd':{'r':self.get_request_number(),
                      'a':'p',
-                     'b':{'p':'/'+self.campaign_storage_path+'/chat/'+rollid,
+                     'b':{'p':'/'+self.campaign_storage_path+'/chat/'+roll.rollid,
                           'd':{'avatar':f'/users/avatar/{accountid}/30',
-                               'content':roll_dice_get_data,
-                               'origRoll':origRoll,
+                               'content':roll.content,
+                               'origRoll':roll.origRoll,
                                'playerid':self.d20_player_id,
-                               'signature':signature,
+                               'signature':roll.signature,
                                'type':'rollresult',
                                'who':who,
                                '.priority':{'.sv':'timestamp'}
@@ -518,7 +515,37 @@ class Campaign:
 
         self.websocket.send(json.dumps(data))
 
-    
+class Roll:
+    def __init__(self,dice:int,sides:int,content,signature,rollid,type='R',expr='',mods={}):
+        self.data = {}
+        self.data['type'] = type
+        self.data['dice'] = dice
+        self.data['sides'] = sides
+        self.data['mods'] = mods
+        self.content = content
+        self.signature = signature
+        self.rollid = rollid
+        if expr != '':
+            self.expr = int(expr)
+        else:
+            self.expr = 0
+        self.origRoll = f'{dice}d{sides}'+expr
+
+    def change_results(self,results:list,total=None,roll=0):
+        '''
+        results = [{'v':int(result1)},{'v':int(result2)},...]
+        if total==None -> calculate from given results + self.expr
+        '''
+        data = json.loads(self.content)
+        if total == None:
+            total = self.expr
+            for result in results:
+                total += result['v']
+        data['rolls'][roll]['results'] = results
+        data['total'] = total
+        self.signature = False
+        self.content = json.dumps(data)
+
 
 class Player:
     def __init__(self,Name,ID,image):
@@ -550,15 +577,17 @@ if __name__ == '__main__':
 
     campaign = ap.campaign(games['games'][0])
     campaign.launch()
-    name = 'Мидир'
+    name = 'ГЭЭМ'
 
-    #ret = campaign.roll_dice_get(1,69,'+5')
-    #campaign.roll_dice_set(ret[0],ret[1],ret[2],'1',5520898,who='1')
+    for i in range(10):
+        roll = campaign.roll_dice_get(1,69,'+5')
+        roll.change_results([{'v':69}])    
+        campaign.roll_dice_set(roll)
     #for i in range(1):
     
     #for player in campaign.players.keys():        
         #campaign.send_message('Party!',int(campaign.players[player]['d20userid']),who=campaign.players[player]['displayname'])
-    campaign.send_message('!!',campaign.get_accountid_by_name(name),who=name)
+    #campaign.send_message('!!',campaign.get_accountid_by_name(name),who=name+' (GM)')
     ap.dump_session()
     campaign.close()
     print(games)
