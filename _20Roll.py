@@ -333,21 +333,25 @@ class Campaign:
         fbdebug=False
         forcetouch=False
 
-
-        response = self.session.get(APP_URL+f'/editor/setcampaign/{self.game.ID}')       
+        #setting campaign
+        self.session.get(APP_URL+f'/editor/setcampaign/{self.game.ID}')       
         response = self.session.get(APP_URL+f'/editor/startjs/?timestamp={timestamp()}&disablewebgl={str(disablewebgl).lower()}&forcelongpolling={str(forcelongpolling).lower()}&offsite={str(offsite).lower()}&fbdebug={str(fbdebug).lower()}&forcetouch={str(forcetouch).lower()}')
         self.parse_config(response.text)
 
 
+        #getting firebase for campaign
+        response = self.session.get(self.FIREBASE_ROOT+f'/.lp?start=t&ser={random.randint(0,500000)}&cb=1&v=5').text
+        offset = response.find('h":"')+4        
+        FIREBASE = 'wss://'+response[offset:response.find('"',offset)] + '/.ws?v=5&'
+
         #Set websocket session
         
-        self.websocket = websocket.create_connection(FIREBASE+f'ns={self.FIREBASE_ROOT[self.FIREBASE_ROOT.find("/")+2:self.FIREBASE_ROOT.find(".")]}')
-
-        data = self.websocket.recv()
-               
+        self.websocket = websocket.create_connection(FIREBASE+f'ns={self.FIREBASE_ROOT[self.FIREBASE_ROOT.find("/")+2:self.FIREBASE_ROOT.find(".")]}')        
+                        
         #Authenticate
         auth_data = '{"t":"d","d":{"r":'+str(self.get_request_number())+',"a":"auth","b":{"cred":"'+self.GNTKN+'"}}}'
         self.websocket.send(auth_data)
+        data = self.websocket.recv()
         data = self.websocket.recv()
         p_data = json.loads(data)
         auth = p_data['d']['b']['s'] == 'ok'
