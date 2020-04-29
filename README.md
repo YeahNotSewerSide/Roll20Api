@@ -8,3 +8,6 @@ Now it's pretty raw api, you can parse your games, launch game, roll dices and s
   pip install beautifulsoup4
   
   pip install websocket-client
+  
+# TODO:
+  Dynamically change variable FIREBASE
