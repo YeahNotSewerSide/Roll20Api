@@ -10,4 +10,4 @@ Now it's pretty raw api, you can parse your games, launch game, roll dices and s
   pip install websocket-client
   
 # TODO:
-  Dynamically change variable FIREBASE
+  Dynamically change variable FIREBASE(Implemented must be checked)
