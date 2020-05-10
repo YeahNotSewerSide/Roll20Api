@@ -16,4 +16,8 @@ Now it's pretty raw api, you can parse your games, launch game, roll dices and s
   
   Improve dice rolling
   
-  Fix campaign config parsing
+  Fix campaign config parsing(Fixed, must be tested)
+  
+  Implement pages functionality
+  
+  Add standart packet processors
