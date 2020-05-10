@@ -64,7 +64,7 @@ class api:
         data = {'email':self.email,'password':self.password}
         response = self.session.post(APP_URL+'/sessions/create',data=data,headers=headers)
 
-        return response.text[10878:10901] == '<body class="loggedin">'
+        return '<body class="loggedin">' in response.text[32:len(response.text)//2]#response.text[10878:10901] == '<body class="loggedin">'
 
 
     def get_recent_games(self):
@@ -202,14 +202,24 @@ class Stack:
 
 
 
-def start_websocket(campaign):   
+def start_websocket(campaign,packet_processor=None): 
+    '''
+    pakect_processor must accept 2 params (camapign(obj),data)
+    packet_processor must return True/False, depends on has it parsed packets 
+    or not. If return False -> append packets to campaign packets
+    '''
     while not campaign._thread_receiver_stop:
         data = campaign.websocket.recv()
         try:
             p_data = json.loads(data)
         except:
             p_data = data
-        campaign.packets.append(p_data)
+
+        if packet_processor != None:
+            if not packet_processor(campaign,p_data):
+                campaign.packets.append(p_data)
+        else:
+            campaign.packets.append(p_data)
 
         
 
@@ -252,67 +262,120 @@ class Campaign:
         self._ping_thread_stop = False
         self.packets = Stack(30)
         self.players = {}
-        
+     
+    def wrap_data(self,data,h=''):
+        '''
+        wrap data with firebase data structure
+        '''
+        return {"t":"d","d":{"r":self.get_request_number(),"a":"q","b":{"p":data,"h":h}}}
 
     def parse_config(self,data:str):#for launch with standart params
         commands = data[0:data.find('Object.defineProperty(window, "is_m')-2].replace('\n','').split(';')
+        counter = 0
+
+        if commands[counter][:11] == 'Sentry.init':
+            first_offset = commands[counter].find(': "')+3
+            url = commands[counter][first_offset:commands[counter].find('" ',first_offset)]
+            self.Sentry = Sentry(url)
+            counter += 1
         
-        first_offset = commands[0].find(': "')+3
-        url = commands[0][first_offset:commands[0].find('" ',first_offset)]
-        self.Sentry = Sentry(url)
-
-        first_offset = commands[1].find('(')+1
-        user = json.loads(commands[1][first_offset:commands[1].find(')',first_offset)])
-        self.Sentry.setUser(user)
-
-        first_offset = commands[2].find('"')+1
-        self.FIREBASE_ROOT = commands[2][first_offset:commands[2].find('"',first_offset)]
-
-        first_offset = commands[3].find('"')+1
-        self.GNTKN = commands[3][first_offset:commands[3].find('"',first_offset)]
-
-        first_offset = commands[4].find('"')+1
-        self.RANDOM_ENTROPY = commands[4][first_offset:commands[4].find('"',first_offset)]
+        if commands[counter][:14] == 'Sentry.setUser':
+            first_offset = commands[counter].find('(')+1
+            user = json.loads(commands[counter][first_offset:commands[counter].find(')',first_offset)])
+            self.Sentry.setUser(user)
+            counter += 1
         
-        first_offset = commands[6].find('"')+1
-        self.d20ext.s3base = commands[6][first_offset:commands[6].find('"',first_offset)]
+        if commands[counter][:20] == 'window.FIREBASE_ROOT':
+            first_offset = commands[counter].find('"')+1
+            self.FIREBASE_ROOT = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
+        
+        if commands[counter][:12] == 'window.GNTKN':
+            first_offset = commands[counter].find('"')+1
+            self.GNTKN = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
+        
+        if commands[counter][:21] == 'window.RANDOM_ENTROPY':
+            first_offset = commands[counter].find('"')+1
+            self.RANDOM_ENTROPY = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
+        
+        if commands[counter][:13] == 'window.d20ext':
+            counter += 1
 
-        first_offset = commands[7].find('= ')+2
-        self.campaign_id = int(commands[7][first_offset:])
+        if commands[counter][:13] == 'd20ext.s3base':
+            first_offset = commands[counter].find('"')+1
+            self.d20ext.s3base = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
 
-        first_offset = commands[8].find('= ')+2
-        self.token_marker_array = json.loads(commands[8][first_offset:])
+        if commands[counter][:17] == 'const campaign_id':
+            first_offset = commands[counter].find('= ')+2
+            self.campaign_id = int(commands[counter][first_offset:])
+            counter += 1
+        
+        if commands[counter][:22] == 'let token_marker_array':
+            first_offset = commands[counter].find('= ')+2
+            self.token_marker_array = json.loads(commands[counter][first_offset:])
+            counter += 1
 
-        first_offset = commands[11].find('"')+1
-        self.imgsrv_url = commands[11][first_offset:commands[11].find('"',first_offset)]
+        if commands[counter][:18] == 'window.campaign_id':
+            counter += 1
+        if commands[counter][:22] == 'window.accountSettings':
+            counter += 1
+        if commands[counter][:11] == 'console.log':
+            counter += 1
+        
+        if commands[counter][:16] == 'const imgsrv_url':
+            first_offset = commands[counter].find('"')+1
+            self.imgsrv_url = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
 
-        first_offset = commands[12].find('"')+1
-        self.d20ext.videotype = commands[12][first_offset:commands[12].find('"',first_offset)]
+        if commands[counter][:16] == 'const share_link':
+            first_offset = commands[counter].find('"')+1
+            self.share_link = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
 
-        first_offset = commands[13].find('"')+1#!!
-        self.d20ext.webrtcSetup['ip'] = commands[13][first_offset:commands[13].find('"',first_offset)]
+        if commands[counter][:16] == 'd20ext.videotype':
+            first_offset = commands[counter].find('"')+1
+            self.d20ext.videotype = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
+        
+        if commands[counter][:18] == 'd20ext.webrtcSetup':
+            first_offset = commands[counter].find('"')+1#!!
+            self.d20ext.webrtcSetup['ip'] = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
 
-        first_offset = commands[14].find('"')+1
-        self.d20ext.webrtcSetup['turn_user'] = commands[14][first_offset:commands[14].find('"',first_offset)]
+        if commands[counter][:28] == 'd20ext.webrtcSetup.turn_user':
+            first_offset = commands[counter].find('"')+1
+            self.d20ext.webrtcSetup['turn_user'] = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
+        if commands[counter][:26] == 'd20ext.webrtcSetup.turn_pw':
+            first_offset = commands[counter].find('"')+1
+            self.d20ext.webrtcSetup['turn_pw'] = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
+        if commands[counter][:28] == 'window.campaign_storage_path':
+            first_offset = commands[counter].find('"')+1
+            self.campaign_storage_path = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
+        if commands[counter][:21] == 'window.d20_account_id':
+            first_offset = commands[counter].find('"')+1
+            self.d20_account_id = int(commands[counter][first_offset:commands[counter].find('"',first_offset)])
+            counter += 1
 
-        first_offset = commands[15].find('"')+1
-        self.d20ext.webrtcSetup['turn_pw'] = commands[15][first_offset:commands[15].find('"',first_offset)]
-
-        first_offset = commands[16].find('"')+1
-        self.campaign_storage_path = commands[16][first_offset:commands[16].find('"',first_offset)]
-
-        first_offset = commands[17].find('"')+1
-        self.d20_account_id = int(commands[17][first_offset:commands[17].find('"',first_offset)])
-
-        first_offset = commands[18].find('"')+1
-        self.d20_player_id = commands[18][first_offset:commands[18].find('"',first_offset)]
-
-        first_offset = commands[19].find('"')+1
-        self.d20_current_name = commands[19][first_offset:commands[19].find('"',first_offset)]
-
-        first_offset = commands[21].find(': ')+2
-        self.gm = 'true' == commands[21][first_offset:commands[21].find(',',first_offset)]
-
+        if commands[counter][:20] == 'window.d20_player_id':
+            first_offset = commands[counter].find('"')+1
+            self.d20_player_id = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
+        if commands[counter][:23] == 'window.d20_current_name':
+            first_offset = commands[counter].find('"')+1
+            self.d20_current_name = commands[counter][first_offset:commands[counter].find('"',first_offset)]
+            counter += 1
+        if commands[counter][:23] == 'window.ignore_tutorials':
+            counter += 1
+        if commands[counter][:6] == 'Object':
+            first_offset = commands[counter].find(': ')+2
+            self.gm = 'true' == commands[counter][first_offset:commands[counter].find(',',first_offset)]
+            counter += 1
         return None
 
     def get_request_number(self):
@@ -369,6 +432,33 @@ class Campaign:
         self._thread_receiver.start()
               
         return auth
+    
+    def get_token_markers(self):
+        '''
+        sends request to server, check self.packets
+        '''
+        data = self.wrap_data('/'+self.campaign_storage_path+'/campaign')
+        self.websocket.send(data)
+        return self._request_number
+
+    def get_jukeboxplaylist(self):
+        '''
+        sends request to server, check self.packets
+        returns request number
+        '''
+        data = self.wrap_data('/'+self.campaign_storage_path+'/jukeboxplaylist')
+        self.websocket.send(data)
+        return self._request_number
+
+
+    def get_pages(self):
+        '''
+        sends request to server, check self.packets
+        '''
+        data = self.wrap_data('/'+self.campaign_storage_path+'/pages')
+        self.websocket.send(data)
+        return self._request_number
+
 
     def close(self):
         self._ping_thread_stop = True
@@ -458,6 +548,7 @@ class Campaign:
                 id = int(campaign.players[player]['d20userid'])
                 return id
         return -1
+
 
 
     def roll_dice_set(self,roll,accountid=None,who=None):
@@ -563,13 +654,29 @@ class Game:
         self.LastPlayed = LastPlayed
    
 
-
-
+class Page:
+    def __init__(self,campaign:Campaign,json_data:dict):
+        self.campaign = campaign
+        self.json_data = json_data
+        self.ext = self.json_data['thumbnail'][0:self.json_data['thumbnail'].find('?')][-4:]
+        self.img_path = self.json_data['thumbnail'][0:self.json_data['thumbnail'].find('thumb.jpg?')]
+    def get_id(self):
+        return self.json_data['id']
+    def get_name(self):
+        return self.json_data['name']
+    def get_placement(self):
+        return self.json_data['placement']
+    def get_thumbnail(self):
+        return self.img_path+'thumb'+self.ext
+    def get_max_size_photo(self):
+        return self.img_path+'max'+self.ext
 
 
 
 if __name__ == '__main__':
-    ap = api(session_file='session.roll20') #CHECK class api!!! :24
+
+
+    ap = api(session_file='session.roll20') #CHECK class api!!!
 
     #main_page = ap.login() #IF SESSION DOESN'T EXIST
 
@@ -577,17 +684,20 @@ if __name__ == '__main__':
 
     campaign = ap.campaign(games['games'][0])
     campaign.launch()
-    name = 'ГЭЭМ'
-
-    for i in range(10):
-        roll = campaign.roll_dice_get(1,69,'+5')
-        roll.change_results([{'v':69}])    
-        campaign.roll_dice_set(roll)
+    name = 'Мидир'
+    roll = campaign.roll_dice_get(1,20)
+    roll.change_results([{'v':20}])
+    campaign.roll_dice_set(roll)
+    #campaign.send_message('What if you wanted to go to heaven, but God said:"Sorry, someone DDOSed heaven`s servers"')
+    #for i in range(10):
+    #    roll = campaign.roll_dice_get(1,69)
+    #    roll.change_results([{'v':69}])    
+    #    campaign.roll_dice_set(roll)
     #for i in range(1):
     
     #for player in campaign.players.keys():        
         #campaign.send_message('Party!',int(campaign.players[player]['d20userid']),who=campaign.players[player]['displayname'])
-    #campaign.send_message('!!',campaign.get_accountid_by_name(name),who=name+' (GM)')
+    #campaign.send_message('Я-гном',campaign.get_accountid_by_name(name),who=name+'')
     ap.dump_session()
     campaign.close()
     print(games)
