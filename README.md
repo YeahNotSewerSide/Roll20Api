@@ -15,3 +15,5 @@ Now it's pretty raw api, you can parse your games, launch game, roll dices and s
   Dynamically change variable FIREBASE(Implemented must be checked)
   
   Improve dice rolling
+  
+  Fix campaign config parsing
